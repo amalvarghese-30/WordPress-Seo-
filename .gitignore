@@ -1,0 +1,33 @@
+# Environment and credentials
+.env
+.env.local
+.env.*.local
+
+# Backups and database dumps
+backups/
+*.sql
+*.sql.gz
+*.tar.gz
+*.bak
+*.backup
+
+# WordPress runtime and generated files
+wordpress/*
+!wordpress/.gitkeep
+
+# Logs and temporary files
+*.log
+logs/
+temp/
+tmp/
+
+# OS metadata
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE and editor settings
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace

@@ -1,6 +1,8 @@
 # StillWorks HTML Sitemap Sync
 
-StillWorks HTML Sitemap Sync is a WordPress Must-Use (MU) plugin that automatically discovers standalone static HTML pages from any custom directory on your server (such as `/locations/`, `/xyz/`, `/landing/`, or root-level `.html` files) and seamlessly integrates them into Rank Math SEO's XML sitemap hierarchy.
+StillWorks HTML Sitemap Sync is a WordPress Must-Use (MU) plugin that automatically discovers standalone static HTML pages from any custom directory on your server (such as `/locations/`, `/test-locations/`, `/xyz/`, or root-level `.html` files) and integrates them directly into Rank Math SEO as a dedicated **`/html-sitemap.xml`** child sitemap.
+
+It includes **full administrator access controls** directly inside the WordPress admin dashboard (**Tools > HTML Sitemap Sync**), allowing administrators to toggle individual pages, exclude folders, or exclude specific filenames with zero coding.
 
 ---
 
@@ -11,43 +13,43 @@ StillWorks HTML Sitemap Sync is a WordPress Must-Use (MU) plugin that automatica
 - [C. Project Structure](#c-project-structure)
 - [D. Requirements](#d-requirements)
 - [E. Installation Guide](#e-installation-guide)
-- [F. Adding HTML Pages in Any Folder](#f-adding-html-pages-in-any-folder)
-- [G. Controlling Inclusions and Exclusions](#g-controlling-inclusions-and-exclusions)
+- [F. Administrator Access Controls](#f-administrator-access-controls)
+- [G. Adding HTML Pages in Any Folder](#g-adding-html-pages-in-any-folder)
 - [H. How to Run and Synchronize](#h-how-to-run-and-synchronize)
 - [I. Sitemap URLs and Verification](#i-sitemap-urls-and-verification)
 - [J. Optional Locations Hub Companion Plugin](#j-optional-locations-hub-companion-plugin)
 - [K. Troubleshooting](#k-troubleshooting)
 - [L. Security and Best Practices](#l-security-and-best-practices)
 - [M. Uninstallation](#m-uninstallation)
-- [N. Testing and Validation](#n-testing-and-validation)
 
 ---
 
 ## A. Project Overview
 
 ### The Problem It Solves
-WordPress and SEO plugins (including Rank Math) generate XML sitemaps exclusively by querying database records (`wp_posts`, `wp_terms`). If you deploy standalone static HTML landing pages—whether in `/locations/`, `/xyz/`, `/landing/`, or custom subfolders—they bypass the database for high performance and low server overhead. However, standard SEO plugins are completely unaware of these files, leaving them out of your XML sitemaps.
+WordPress and SEO plugins (including Rank Math) generate XML sitemaps exclusively by querying database records (`wp_posts`, `wp_terms`). If you deploy standalone static HTML landing pages—whether in `/locations/`, `/test-locations/`, `/xyz/`, or custom subfolders—they bypass the database for high performance and low server overhead. However, standard SEO plugins are completely unaware of these files, leaving them out of your XML sitemaps.
 
 ### How StillWorks Bridges the Gap
 1. **Multi-Folder Discovery:** Automatically scans any custom directory under your WordPress root as well as standalone root HTML files, safely skipping WordPress core folders (`wp-admin`, `wp-includes`, `wp-content`).
-2. **Rank Math Custom Provider:** Integrates with Rank Math via the `rank_math/sitemap/providers` filter to generate a dedicated child sitemap (`/locations-sitemap.xml`) linked from your primary `/sitemap_index.xml`.
-3. **Change Detection:** Computes a SHA-256 fingerprint from discovered file paths, URLs, and modification timestamps.
-4. **Targeted Invalidation:** Whenever files are added, modified, or deleted, it flushes only the root sitemap and locations sitemap cache files, keeping standard post and page caches intact.
+2. **Dedicated Child Sitemap (`/html-sitemap.xml`):** Integrates with Rank Math via the `rank_math/sitemap/providers` filter to expose `/html-sitemap.xml`, automatically linked from your primary `/sitemap_index.xml`.
+3. **Interactive Admin Controls:** Provides a dashboard under **Tools > HTML Sitemap Sync** with per-page inclusion checkboxes and folder/file rule lists.
+4. **Change Detection & Targeted Invalidation:** Whenever files or settings are updated, it flushes only the root sitemap and HTML sitemap cache files, keeping standard post and page caches intact.
 
 ---
 
 ## B. Features
 
-- **Multi-Directory & New Folder Auto-Discovery:** Discovers `.html` files in `/locations/`, `/xyz/`, `/landing/`, any newly created folder, and root-level static pages.
+- **Multi-Directory Discovery:** Discovers `.html` files in `/locations/`, `/test-locations/`, `/xyz/`, any newly created folder, and root-level static pages.
+- **Admin Dashboard Controls:** Visual checkboxes to include or exclude any discovered page directly from the WordPress admin (**Tools > HTML Sitemap Sync**).
+- **Rule-Based Exclusion Lists:** Admin settings for custom excluded folders and excluded filenames.
 - **WordPress Core Protection:** Skips system directories (`wp-admin`, `wp-includes`, `wp-content`, `backups`, `.git`, `node_modules`, `vendor`) so internal files never leak into sitemaps.
-- **Inclusion & Exclusion Control:** Full control via WordPress filters (`excluded_dirs`, `excluded_files`, `allowed_dirs`, and `include_file`).
+- **Dedicated Child Sitemap:** Exposed as `/html-sitemap.xml` inside `/sitemap_index.xml`.
 - **Path Traversal Protection:** Validates canonical filesystem paths (`realpath`) and ignores symlinks to prevent path traversal outside WordPress root.
-- **File Filtering:** Excludes non-landing utility files by default (`index.html`, `404.html`, `thank-you.html`).
+- **Default File Filtering:** Automatically excludes non-landing files (`index.html`, `404.html`, `thank-you.html`, `readme.html`).
 - **Filesystem Timestamps:** Formats `filemtime` into ISO-8601 UTC dates (`Y-m-d H:i:s`).
 - **Clean URL Encoding:** Safely encodes nested path segments using `rawurlencode`.
-- **Rank Math Integration:** Native child sitemap with automatic multi-page pagination.
-- **Targeted Cache Invalidation:** Flushes only affected sitemaps upon detected change.
-- **WP-Cron & Manual Sync:** Automatic 15-minute cron schedule and admin dashboard **Sync Now** button.
+- **Targeted Cache Invalidation:** Flushes only affected sitemaps upon detected change or admin settings save.
+- **WP-Cron & Manual Sync:** Automatic 15-minute cron schedule and admin dashboard **Sync Now** / **Save Settings & Sync** actions.
 - **Optional Locations Hub Companion:** Separate companion plugin providing the `[stillworks_locations_hub]` shortcode for frontend card displays.
 
 ---
@@ -65,7 +67,7 @@ WordPress and SEO plugins (including Rank Math) generate XML sitemaps exclusivel
 │   ├── mumbai.html
 │   └── pune.html
 ├── mu-plugins/
-│   └── html-sitemap-provider.php    # Primary WordPress Must-Use plugin
+│   └── html-sitemap-provider.php    # Primary WordPress Must-Use plugin (with Admin UI)
 ├── .env.example                     # Example Docker environment configuration
 ├── .gitignore                       # Excludes credentials, database dumps, and backups
 ├── docker-compose.yml               # Local MariaDB + WordPress environment
@@ -112,60 +114,34 @@ If you want to display your static pages in a frontend grid via shortcode:
 
 ---
 
-## F. Adding HTML Pages in Any Folder
+## F. Administrator Access Controls
+
+Administrators have complete visual control over what appears in `/html-sitemap.xml`:
+
+1. Navigate to **WordPress Admin > Tools > HTML Sitemap Sync**.
+2. **Per-Page Checkboxes:**
+   - Every detected HTML file across your folders is listed with its file path, public URL, and last modified date.
+   - Simply **check** the pages you want in the sitemap, and **uncheck** any pages you want excluded.
+3. **Custom Excluded Folders:**
+   - Add folder names (one per line) in the "Custom Excluded Folders" box to ignore entire directories (e.g. `private`, `drafts`, `temp`).
+4. **Excluded Filenames:**
+   - Add filenames (one per line) in the "Excluded Filenames" box to ignore specific files anywhere on the site.
+5. Click **Save Settings & Sync Sitemap**.
+   - Your preferences are saved, the Rank Math cache is immediately purged, and `/html-sitemap.xml` is updated live.
+
+---
+
+## G. Adding HTML Pages in Any Folder
 
 You can add standalone `.html` files in **any custom folder** or the WordPress root:
 
 ### Examples:
 - `/locations/delhi.html` &rarr; `https://example.com/locations/delhi.html`
-- `/xyz/sample.html` &rarr; `https://example.com/xyz/sample.html`
+- `/test-locations/mumbai.html` &rarr; `https://example.com/test-locations/mumbai.html`
 - `/landing/summer-sale.html` &rarr; `https://example.com/landing/summer-sale.html`
 - `/custom-page.html` &rarr; `https://example.com/custom-page.html`
 
-Whenever a new folder is created on the server (outside of WordPress core directories), its `.html` files are discovered automatically on the next synchronization.
-
----
-
-## G. Controlling Inclusions and Exclusions
-
-You have full control over what is included in the sitemap without editing the core plugin, using WordPress filter hooks in your child theme's `functions.php` or a code snippet plugin.
-
-### 1. Exclude Specific Folders
-```php
-add_filter( 'stillworks_html_sitemap_excluded_dirs', function( $dirs ) {
-    $dirs[] = 'private-folder';
-    $dirs[] = 'temp';
-    return $dirs;
-});
-```
-
-### 2. Exclude Specific Files
-```php
-add_filter( 'stillworks_html_sitemap_excluded_files', function( $files ) {
-    $files[] = 'draft.html';
-    $files[] = 'test-page.html';
-    return $files;
-});
-```
-
-### 3. Whitelist Mode (Only Scan Specific Folders)
-If you want to restrict scanning to specific designated folders:
-```php
-add_filter( 'stillworks_html_sitemap_allowed_dirs', function( $allowed ) {
-    return [ 'locations', 'xyz', 'landing' ];
-});
-```
-
-### 4. Granular Per-File Logic
-```php
-add_filter( 'stillworks_html_sitemap_include_file', function( $include, $relative_path, $real_path ) {
-    // Example: skip any file containing the word "preview"
-    if ( strpos( $relative_path, 'preview' ) !== false ) {
-        return false;
-    }
-    return $include;
-}, 10, 3 );
-```
+> **Note for Docker Users:** If you run WordPress inside Docker, make sure any new host folder is mapped in `docker-compose.yml` under `volumes:` (e.g. `./test-locations:/var/www/html/test-locations`), or place subfolders inside an already-mapped folder like `locations/` (e.g. `locations/test/`).
 
 ---
 
@@ -173,20 +149,29 @@ add_filter( 'stillworks_html_sitemap_include_file', function( $include, $relativ
 
 - **Automated Sync (WP-Cron):** Runs every 15 minutes via the hook `stillworks_html_sitemap_cron_sync`.
 - **Request-Based Detection:** Evaluates changes on WordPress `init` (priority 99).
-- **Manual Trigger:** Go to **Tools > HTML Sitemap Sync** in the WordPress admin and click **Sync Now**.
+- **Manual Trigger:** Go to **Tools > HTML Sitemap Sync** in the WordPress admin and click **Sync Now** or **Save Settings & Sync Sitemap**.
 - **System Cron Recommendation:** For sites with low traffic, disable default WP-Cron (`define('DISABLE_WP_CRON', true);`) and run `php /var/www/html/wp-cron.php` via Linux crontab every 15 minutes.
 
 ---
 
 ## I. Sitemap URLs and Verification
 
-- **Root Sitemap Index:** `https://example.com/sitemap_index.xml`
-- **Child Sitemap:** `https://example.com/locations-sitemap.xml`
+- **Root Sitemap Index:**
+  ```text
+  https://example.com/sitemap_index.xml
+  ```
+- **HTML Pages Child Sitemap:**
+  ```text
+  https://example.com/html-sitemap.xml
+  ```
 
-### Verification Steps:
-1. Open `https://example.com/locations-sitemap.xml` to view all discovered HTML pages.
-2. Verify that your root index `https://example.com/sitemap_index.xml` contains the `<sitemap>` entry for `/locations-sitemap.xml`.
-3. Submit `sitemap_index.xml` in [Google Search Console](https://search.google.com/search-console) under **Sitemaps**.
+### What You Will See:
+1. When viewing `sitemap_index.xml`, you will see:
+   - `post-sitemap.xml`
+   - `page-sitemap.xml`
+   - `category-sitemap.xml`
+   - **`html-sitemap.xml`**
+2. When clicking into `html-sitemap.xml`, all included standalone HTML files from `/locations/`, `/test-locations/`, and other custom folders are listed with their full URLs and `<lastmod>` timestamps.
 
 ---
 
@@ -215,9 +200,9 @@ The repository includes a companion plugin at [`companion/stillworks-locations-h
 | Issue | Cause | Solution |
 |---|---|---|
 | **MU-plugin not loaded** | Placed in subfolder. | Ensure `html-sitemap-provider.php` is directly in `wp-content/mu-plugins/`. |
-| **`/locations-sitemap.xml` returns 404** | Rewrite rules cached. | Go to **Settings > Permalinks** and click **Save Changes**. Verify Rank Math Sitemap module is active. |
-| **HTML file in custom folder not appearing** | File extension or exclusion. | Confirm the file ends with `.html` and is not named `index.html`, `404.html`, or `thank-you.html`. Click **Sync Now** under **Tools > HTML Sitemap Sync**. |
-| **Core folders scanned unexpectedly** | Custom directory name matches system folder. | Do not place public landing pages inside `wp-admin`, `wp-includes`, or `wp-content`. |
+| **`/html-sitemap.xml` returns 404** | Rewrite rules cached. | Go to **Settings > Permalinks** and click **Save Changes**. Verify Rank Math Sitemap module is active. |
+| **Page appears as "Excluded" in Admin** | Unchecked in dashboard or matches filename rule. | Go to **Tools > HTML Sitemap Sync**, check the box next to the page, and click **Save Settings & Sync Sitemap**. |
+| **New folder on Docker host not appearing** | Folder not mounted in container. | Add the folder to `volumes:` in `docker-compose.yml`, or place subfolders inside `locations/`. |
 | **Cache invalidation fails** | Permissions on cache directory. | Ensure the web server user has write permissions to `wp-content/uploads/rank-math/`. |
 
 ---
@@ -226,42 +211,5 @@ The repository includes a companion plugin at [`companion/stillworks-locations-h
 
 1. **Safe Permissions:** Keep directories at `755` and files at `644`. Never use `777`.
 2. **Path Traversal Mitigation:** The plugin uses `realpath()` and validates that all files reside inside the canonical root, rejecting symbolic links.
-3. **Upload Security:** Treat static HTML files as executable code; allow only trusted developers or administrators to upload `.html` files.
+3. **Access Control:** Settings saving and manual synchronization require the `manage_options` capability and are protected with WordPress security nonces.
 4. **Credential Isolation:** Never commit `.env` files or database dumps.
-
----
-
-## M. Uninstallation
-
-1. Remove the MU-plugin:
-   ```bash
-   rm /path/to/wordpress/wp-content/mu-plugins/html-sitemap-provider.php
-   ```
-2. Remove the companion plugin (if installed):
-   ```bash
-   rm /path/to/wordpress/wp-content/plugins/stillworks-locations-hub.php
-   ```
-3. (Optional) Remove the database option:
-   ```bash
-   wp option delete stillworks_html_sitemap_signature
-   ```
-4. Static HTML files on your server remain completely unaffected.
-
----
-
-## N. Testing and Validation
-
-### PHP Syntax Check
-```bash
-php -l mu-plugins/html-sitemap-provider.php
-php -l companion/stillworks-locations-hub.php
-```
-
-### Check Sitemap Generation via curl
-```bash
-# Verify child sitemap presence in index:
-curl -s https://example.com/sitemap_index.xml | grep "locations-sitemap.xml"
-
-# Verify all custom folder pages appear:
-curl -s https://example.com/locations-sitemap.xml | grep "<loc>"
-```

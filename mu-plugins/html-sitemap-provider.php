@@ -1,8 +1,8 @@
 <?php
 /**
- * Plugin Name: StillWorks HTML Sitemap Sync
- * Description: Discovers standalone HTML pages from any folder and integrates them with Rank Math as an HTML child sitemap with admin controls.
- * Version: 1.3.0
+ * Plugin Name: StillWorks HTML & PHP Sitemap Sync
+ * Description: Discovers standalone HTML and PHP pages (including directory-based index.php locations) from any folder and integrates them with Rank Math with admin controls.
+ * Version: 1.4.0
  * Author: StillWorks
  */
 
@@ -11,13 +11,15 @@ defined( 'ABSPATH' ) || exit;
 final class StillWorks_HTML_Sitemap_Sync {
 
     /**
-     * Permanent core system directories that must always be excluded.
+     * Permanent core system directories that must always be excluded from scanning.
      */
     private const CORE_EXCLUDED_DIRS = [
         'wp-admin',
         'wp-includes',
         'wp-content',
         'backups',
+        'mu-plugins',
+        'companion',
         '.git',
         '.github',
         'node_modules',
@@ -25,13 +27,23 @@ final class StillWorks_HTML_Sitemap_Sync {
     ];
 
     /**
-     * Default filenames to exclude from sitemap inclusion.
+     * Allowed file extensions for standalone landing pages.
+     */
+    private const ALLOWED_EXTENSIONS = [
+        'html',
+        'php',
+    ];
+
+    /**
+     * Default utility filenames to exclude from sitemap inclusion.
      */
     private const DEFAULT_EXCLUDED_FILES = [
-        'index.html',
         '404.html',
+        '404.php',
         'thank-you.html',
+        'thank-you.php',
         'readme.html',
+        'license.txt',
     ];
 
     private const SIGNATURE_OPTION = 'stillworks_html_sitemap_signature';
@@ -102,7 +114,7 @@ final class StillWorks_HTML_Sitemap_Sync {
     }
 
     /**
-     * Scan directories and return all discovered HTML files.
+     * Scan directories and return all discovered HTML and PHP location files.
      *
      * @param bool $all If true, returns all discovered files with an 'included' flag. If false, returns only included files.
      * @return array
@@ -120,14 +132,14 @@ final class StillWorks_HTML_Sitemap_Sync {
 
         $settings = self::get_settings();
 
-        // Merge core excluded dirs with admin-configured custom excluded dirs
+        // Merge core excluded dirs with custom excluded dirs
         $excluded_dirs = array_unique( array_merge(
             self::CORE_EXCLUDED_DIRS,
             (array) $settings['custom_excluded_dirs']
         ) );
         $excluded_dirs = (array) apply_filters( 'stillworks_html_sitemap_excluded_dirs', $excluded_dirs );
 
-        // Merge default excluded files with admin-configured excluded files
+        // Merge default excluded files with custom excluded files
         $excluded_files = array_unique( array_merge(
             self::DEFAULT_EXCLUDED_FILES,
             (array) $settings['custom_excluded_files']
@@ -136,11 +148,13 @@ final class StillWorks_HTML_Sitemap_Sync {
 
         $excluded_paths = (array) ( $settings['excluded_paths'] ?? [] );
         $allowed_dirs   = (array) apply_filters( 'stillworks_html_sitemap_allowed_dirs', [] );
+        $allowed_exts   = (array) apply_filters( 'stillworks_html_sitemap_allowed_extensions', self::ALLOWED_EXTENSIONS );
 
         $excluded_dirs_map  = array_map( 'strtolower', $excluded_dirs );
         $excluded_files_map = array_map( 'strtolower', $excluded_files );
         $excluded_paths_map = array_map( 'strtolower', $excluded_paths );
         $allowed_dirs_map   = array_filter( array_map( 'strtolower', $allowed_dirs ) );
+        $allowed_exts_map   = array_map( 'strtolower', $allowed_exts );
 
         $files = [];
 
@@ -155,9 +169,10 @@ final class StillWorks_HTML_Sitemap_Sync {
 
                     $full_item_path = $root . DIRECTORY_SEPARATOR . $item;
 
-                    // 1. Standalone HTML file in the WordPress root directory
+                    // 1. Standalone HTML file in the WordPress root directory (ONLY .html, never root .php to protect WP core)
                     if ( is_file( $full_item_path ) && ! is_link( $full_item_path ) ) {
-                        if ( 'html' === strtolower( pathinfo( $item, PATHINFO_EXTENSION ) ) ) {
+                        $ext = strtolower( pathinfo( $item, PATHINFO_EXTENSION ) );
+                        if ( 'html' === $ext && 'index.html' !== strtolower( $item ) ) {
                             $is_file_excluded = in_array( strtolower( $item ), $excluded_files_map, true );
                             $is_path_excluded = in_array( strtolower( $item ), $excluded_paths_map, true );
                             $filter_allowed   = apply_filters( 'stillworks_html_sitemap_include_file', true, $item, $full_item_path );
@@ -182,7 +197,7 @@ final class StillWorks_HTML_Sitemap_Sync {
                         continue;
                     }
 
-                    // 2. Scan subdirectories (locations, test-locations, xyz, landing, etc.)
+                    // 2. Scan subdirectories (location, locations, test-locations, xyz, etc.)
                     if ( is_dir( $full_item_path ) && ! is_link( $full_item_path ) ) {
                         $dir_name_lower = strtolower( $item );
 
@@ -208,7 +223,8 @@ final class StillWorks_HTML_Sitemap_Sync {
                                 continue;
                             }
 
-                            if ( 'html' !== strtolower( $file->getExtension() ) ) {
+                            $ext = strtolower( $file->getExtension() );
+                            if ( ! in_array( $ext, $allowed_exts_map, true ) ) {
                                 continue;
                             }
 
@@ -229,6 +245,38 @@ final class StillWorks_HTML_Sitemap_Sync {
                             );
 
                             $base_name = strtolower( basename( $relative_path ) );
+
+                            // Check filename exclusion
+                            if ( in_array( $base_name, $excluded_files_map, true ) ) {
+                                continue;
+                            }
+
+                            // Generate clean URL:
+                            // If file is index.php or index.html in a subdirectory, use clean trailing-slash directory URL!
+                            if ( 'index.php' === $base_name || 'index.html' === $base_name ) {
+                                $dir_path = dirname( $relative_path );
+                                if ( '.' === $dir_path ) {
+                                    continue; // Skip root index
+                                }
+                                $encoded_path = implode(
+                                    '/',
+                                    array_map(
+                                        'rawurlencode',
+                                        explode( '/', str_replace( '\\', '/', $dir_path ) )
+                                    )
+                                ) . '/';
+                                $page_url = home_url( '/' . $encoded_path );
+                            } else {
+                                $encoded_path = implode(
+                                    '/',
+                                    array_map(
+                                        'rawurlencode',
+                                        explode( '/', str_replace( '\\', '/', $relative_path ) )
+                                    )
+                                );
+                                $page_url = home_url( '/' . $encoded_path );
+                            }
+
                             $is_file_excluded = in_array( $base_name, $excluded_files_map, true );
                             $is_path_excluded = in_array( strtolower( $relative_path ), $excluded_paths_map, true );
                             $filter_allowed   = apply_filters( 'stillworks_html_sitemap_include_file', true, $relative_path, $real_path );
@@ -238,17 +286,9 @@ final class StillWorks_HTML_Sitemap_Sync {
                             if ( $all || $is_included ) {
                                 $modified = filemtime( $real_path );
                                 if ( false !== $modified ) {
-                                    $encoded_path = implode(
-                                        '/',
-                                        array_map(
-                                            'rawurlencode',
-                                            explode( '/', $relative_path )
-                                        )
-                                    );
-
                                     $files[] = [
                                         'file'      => $relative_path,
-                                        'url'       => home_url( '/' . $encoded_path ),
+                                        'url'       => $page_url,
                                         'timestamp' => $modified,
                                         'lastmod'   => gmdate( 'Y-m-d H:i:s', $modified ),
                                         'included'  => $is_included,
@@ -465,13 +505,6 @@ final class StillWorks_HTML_Sitemap_Sync {
         $files_list = array_filter( array_map( 'trim', preg_split( '/[\r\n,]+/', $raw_files ) ) );
         $custom_excluded_files = array_map( 'sanitize_file_name', $files_list );
 
-        // Always keep index.html and 404.html in the excluded list
-        foreach ( [ 'index.html', '404.html' ] as $required_excluded ) {
-            if ( ! in_array( $required_excluded, $custom_excluded_files, true ) ) {
-                $custom_excluded_files[] = $required_excluded;
-            }
-        }
-
         // 3. Process individual page checkboxes
         $all_discovered = self::scan_files( true );
         $all_paths = array_column( $all_discovered['files'] ?? [], 'file' );
@@ -544,10 +577,10 @@ final class StillWorks_HTML_Sitemap_Sync {
 
         ?>
         <div class="wrap">
-            <h1>HTML Sitemap Sync &amp; Access Controls</h1>
+            <h1>HTML &amp; PHP Sitemap Sync &amp; Access Controls</h1>
 
             <p>
-                Manage standalone HTML pages across all custom directories. Check the pages you want included in your <code>/html-sitemap.xml</code> child sitemap.
+                Manage standalone HTML and PHP location pages across all custom directories (including folder-based <code>index.php</code> pages). Check the pages you want included in your <code>/html-sitemap.xml</code> child sitemap.
             </p>
 
             <?php
@@ -604,7 +637,7 @@ final class StillWorks_HTML_Sitemap_Sync {
                 <?php else : ?>
 
                     <?php if ( empty( $files ) ) : ?>
-                        <p>No standalone HTML files were discovered on the server.</p>
+                        <p>No standalone HTML or PHP location files were discovered on the server.</p>
                     <?php else : ?>
 
                         <table class="widefat striped" style="margin-top:15px;">
@@ -685,7 +718,7 @@ final class StillWorks_HTML_Sitemap_Sync {
                                       name="custom_excluded_files"
                                       rows="3"
                                       class="large-text code"><?php echo esc_textarea( implode( "\n", (array) $settings['custom_excluded_files'] ) ); ?></textarea>
-                            <p class="description">Filenames to ignore anywhere (e.g. <code>index.html</code>, <code>404.html</code>, <code>thank-you.html</code>, <code>readme.html</code>).</p>
+                            <p class="description">Filenames to ignore anywhere (e.g. <code>404.php</code>, <code>thank-you.php</code>, <code>test.php</code>).</p>
                         </td>
                     </tr>
                 </table>
@@ -698,7 +731,7 @@ final class StillWorks_HTML_Sitemap_Sync {
 }
 
 /**
- * Rank Math custom provider for standalone HTML pages.
+ * Rank Math custom provider for standalone HTML and PHP pages.
  */
 final class StillWorks_HTML_Sitemap_Provider {
 

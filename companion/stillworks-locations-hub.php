@@ -1,8 +1,8 @@
 <?php
 /**
  * Plugin Name: StillWorks Locations Hub
- * Description: Dynamic Locations Hub page display for standalone HTML location pages.
- * Version: 1.0.0
+ * Description: Dynamic Locations Hub page display for standalone HTML and PHP location pages.
+ * Version: 1.1.0
  * Author: StillWorks
  */
 
@@ -18,7 +18,7 @@ final class StillWorks_Locations_Hub {
     }
 
     /**
-     * Safely extract the <title> tag from a local HTML file.
+     * Safely extract the <title> tag from a local HTML or PHP file.
      * Bounded read: reads at most 2048 bytes from the file header.
      * Never executes or includes the file.
      *
@@ -38,11 +38,17 @@ final class StillWorks_Locations_Hub {
         // Try direct path from ABSPATH first
         $real_path = realpath( $root . DIRECTORY_SEPARATOR . $relative_path );
 
-        // Fallback: check inside locations/ directory if not found directly
+        // Fallback: check inside location/ or locations/ directory if not found directly
         if ( false === $real_path || ! is_file( $real_path ) ) {
-            $locations_root = realpath( ABSPATH . 'locations' );
-            if ( false !== $locations_root && is_dir( $locations_root ) ) {
-                $real_path = realpath( $locations_root . DIRECTORY_SEPARATOR . $relative_path );
+            foreach ( [ 'location', 'locations' ] as $dir_prefix ) {
+                $check_root = realpath( ABSPATH . $dir_prefix );
+                if ( false !== $check_root && is_dir( $check_root ) ) {
+                    $test_path = realpath( $check_root . DIRECTORY_SEPARATOR . $relative_path );
+                    if ( false !== $test_path && is_file( $test_path ) ) {
+                        $real_path = $test_path;
+                        break;
+                    }
+                }
             }
         }
 
@@ -74,14 +80,21 @@ final class StillWorks_Locations_Hub {
     }
 
     /**
-     * Fallback: format a clean title from the filename.
+     * Fallback: format a clean title from the filename or parent folder name.
      *
      * @param string $relative_path
      * @return string
      */
     private static function title_from_filename( $relative_path ) {
         $base = basename( $relative_path );
-        $name = preg_replace( '/\.html$/i', '', $base );
+        // If file is index.php or index.html, use the parent folder's name as the title!
+        if ( in_array( strtolower( $base ), [ 'index.php', 'index.html' ], true ) ) {
+            $dir = dirname( $relative_path );
+            $name = ( '.' !== $dir ) ? basename( $dir ) : $base;
+        } else {
+            $name = preg_replace( '/\.(html|php)$/i', '', $base );
+        }
+
         $name = str_replace( [ '-', '_' ], ' ', $name );
         return ucwords( $name );
     }

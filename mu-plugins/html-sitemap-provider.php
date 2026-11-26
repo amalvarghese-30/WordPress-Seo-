@@ -1,8 +1,8 @@
 <?php
 /**
  * Plugin Name: StillWorks HTML Sitemap Sync
- * Description: Discovers standalone HTML pages and integrates them with Rank Math.
- * Version: 1.1.0
+ * Description: Discovers standalone HTML pages from any folder and integrates them with Rank Math.
+ * Version: 1.2.0
  * Author: StillWorks
  */
 
@@ -10,8 +10,23 @@ defined( 'ABSPATH' ) || exit;
 
 final class StillWorks_HTML_Sitemap_Sync {
 
-    private const DIRECTORY = 'locations';
+    /**
+     * Standard WordPress core and operational directories to exclude from scanning.
+     */
+    private const EXCLUDED_DIRS = [
+        'wp-admin',
+        'wp-includes',
+        'wp-content',
+        'backups',
+        '.git',
+        '.github',
+        'node_modules',
+        'vendor',
+    ];
 
+    /**
+     * Standard filenames to exclude from sitemap inclusion.
+     */
     private const EXCLUDED_FILES = [
         'index.html',
         '404.html',
@@ -65,92 +80,149 @@ final class StillWorks_HTML_Sitemap_Sync {
     }
 
     /**
-     * Discover eligible HTML files inside /locations/.
+     * Discover eligible HTML files across all custom directories in WordPress root.
      */
     public static function scan_files() {
 
-        $root = realpath( ABSPATH . self::DIRECTORY );
+        $root = realpath( ABSPATH );
 
         if ( false === $root || ! is_dir( $root ) ) {
             return [
                 'files' => [],
-                'error' => 'The locations directory does not exist.',
+                'error' => 'The WordPress root directory could not be resolved.',
             ];
         }
+
+        $excluded_dirs  = (array) apply_filters( 'stillworks_html_sitemap_excluded_dirs', self::EXCLUDED_DIRS );
+        $excluded_files = (array) apply_filters( 'stillworks_html_sitemap_excluded_files', self::EXCLUDED_FILES );
+        $allowed_dirs   = (array) apply_filters( 'stillworks_html_sitemap_allowed_dirs', [] );
+
+        $excluded_dirs_map  = array_map( 'strtolower', $excluded_dirs );
+        $excluded_files_map = array_map( 'strtolower', $excluded_files );
+        $allowed_dirs_map   = array_filter( array_map( 'strtolower', $allowed_dirs ) );
 
         $files = [];
 
         try {
-            $iterator = new RecursiveIteratorIterator(
-                new RecursiveDirectoryIterator(
-                    $root,
-                    FilesystemIterator::SKIP_DOTS
-                )
-            );
+            $root_items = scandir( $root );
 
-            foreach ( $iterator as $file ) {
+            if ( false !== $root_items ) {
+                foreach ( $root_items as $item ) {
+                    if ( '.' === $item || '..' === $item ) {
+                        continue;
+                    }
 
-                if ( ! $file->isFile() || $file->isLink() ) {
-                    continue;
+                    $full_item_path = $root . DIRECTORY_SEPARATOR . $item;
+
+                    // 1. Standalone HTML file in the WordPress root directory
+                    if ( is_file( $full_item_path ) && ! is_link( $full_item_path ) ) {
+                        if ( 'html' === strtolower( pathinfo( $item, PATHINFO_EXTENSION ) ) ) {
+                            if ( in_array( strtolower( $item ), $excluded_files_map, true ) ) {
+                                continue;
+                            }
+
+                            if ( ! apply_filters( 'stillworks_html_sitemap_include_file', true, $item, $full_item_path ) ) {
+                                continue;
+                            }
+
+                            $modified = filemtime( $full_item_path );
+                            if ( false !== $modified ) {
+                                $encoded_path = rawurlencode( $item );
+                                $files[] = [
+                                    'file'      => $item,
+                                    'url'       => home_url( '/' . $encoded_path ),
+                                    'timestamp' => $modified,
+                                    'lastmod'   => gmdate( 'Y-m-d H:i:s', $modified ),
+                                ];
+                            }
+                        }
+                        continue;
+                    }
+
+                    // 2. Scan subdirectories (locations, xyz, landing, etc.)
+                    if ( is_dir( $full_item_path ) && ! is_link( $full_item_path ) ) {
+                        $dir_name_lower = strtolower( $item );
+
+                        // Skip core/system excluded directories
+                        if ( in_array( $dir_name_lower, $excluded_dirs_map, true ) ) {
+                            continue;
+                        }
+
+                        // If allowed directories filter is specified, only scan allowed directories
+                        if ( ! empty( $allowed_dirs_map ) && ! in_array( $dir_name_lower, $allowed_dirs_map, true ) ) {
+                            continue;
+                        }
+
+                        $iterator = new RecursiveIteratorIterator(
+                            new RecursiveDirectoryIterator(
+                                $full_item_path,
+                                FilesystemIterator::SKIP_DOTS
+                            )
+                        );
+
+                        foreach ( $iterator as $file ) {
+                            if ( ! $file->isFile() || $file->isLink() ) {
+                                continue;
+                            }
+
+                            if ( 'html' !== strtolower( $file->getExtension() ) ) {
+                                continue;
+                            }
+
+                            $real_path = $file->getRealPath();
+                            if ( false === $real_path ) {
+                                continue;
+                            }
+
+                            // Ensure resolved path stays within the WordPress root
+                            if ( 0 !== strpos( $real_path, $root . DIRECTORY_SEPARATOR ) ) {
+                                continue;
+                            }
+
+                            $relative_path = str_replace(
+                                DIRECTORY_SEPARATOR,
+                                '/',
+                                substr( $real_path, strlen( $root ) + 1 )
+                            );
+
+                            // Check filename exclusion
+                            if ( in_array( strtolower( basename( $relative_path ) ), $excluded_files_map, true ) ) {
+                                continue;
+                            }
+
+                            // Fine-grained per-file filter
+                            if ( ! apply_filters( 'stillworks_html_sitemap_include_file', true, $relative_path, $real_path ) ) {
+                                continue;
+                            }
+
+                            $modified = filemtime( $real_path );
+                            if ( false === $modified ) {
+                                continue;
+                            }
+
+                            $encoded_path = implode(
+                                '/',
+                                array_map(
+                                    'rawurlencode',
+                                    explode( '/', $relative_path )
+                                )
+                            );
+
+                            $files[] = [
+                                'file'      => $relative_path,
+                                'url'       => home_url( '/' . $encoded_path ),
+                                'timestamp' => $modified,
+                                'lastmod'   => gmdate( 'Y-m-d H:i:s', $modified ),
+                            ];
+                        }
+                    }
                 }
-
-                if ( 'html' !== strtolower( $file->getExtension() ) ) {
-                    continue;
-                }
-
-                $real_path = $file->getRealPath();
-
-                if ( false === $real_path ) {
-                    continue;
-                }
-
-                // Ensure the resolved file remains inside locations/.
-                if ( 0 !== strpos( $real_path, $root . DIRECTORY_SEPARATOR ) ) {
-                    continue;
-                }
-
-                $relative_path = str_replace(
-                    DIRECTORY_SEPARATOR,
-                    '/',
-                    substr( $real_path, strlen( $root ) + 1 )
-                );
-
-                if ( in_array(
-                    strtolower( basename( $relative_path ) ),
-                    self::EXCLUDED_FILES,
-                    true
-                ) ) {
-                    continue;
-                }
-
-                $modified = filemtime( $real_path );
-
-                if ( false === $modified ) {
-                    continue;
-                }
-
-                $encoded_path = implode(
-                    '/',
-                    array_map(
-                        'rawurlencode',
-                        explode( '/', $relative_path )
-                    )
-                );
-
-                $files[] = [
-                    'file'      => $relative_path,
-                    'url'       => home_url(
-                        '/' . self::DIRECTORY . '/' . $encoded_path
-                    ),
-                    'timestamp' => $modified,
-                    'lastmod'   => gmdate( 'Y-m-d H:i:s', $modified ),
-                ];
             }
 
         } catch ( Throwable $exception ) {
             return [
                 'files' => [],
-                'error' => 'Unable to scan the directory: ' . $exception->getMessage(),
+                'error' => 'Unable to scan directories: ' . $exception->getMessage(),
             ];
         }
 
@@ -363,8 +435,7 @@ final class StillWorks_HTML_Sitemap_Sync {
             <h1>HTML Sitemap Sync</h1>
 
             <p>
-                Scans standalone HTML files inside the
-                <code>/locations/</code> directory.
+                Discovers standalone HTML pages from custom directories (such as <code>/locations/</code>, <code>/xyz/</code>, etc.) and WordPress root, excluding core system folders.
             </p>
 
             <?php
@@ -372,7 +443,7 @@ final class StillWorks_HTML_Sitemap_Sync {
                 'updated' => 'Changes detected. Rank Math sitemap cache invalidated.',
                 'unchanged' => 'Sync completed. No file changes were detected.',
                 'baseline_created' => 'Initial sitemap signature created.',
-                'scan_error' => 'Sync failed because the locations directory could not be scanned.',
+                'scan_error' => 'Sync failed because directories could not be scanned.',
                 'rank_math_unavailable' => 'Sync failed because Rank Math sitemap functionality is unavailable.',
             ];
 
@@ -433,7 +504,7 @@ final class StillWorks_HTML_Sitemap_Sync {
                     <table class="widefat striped">
                         <thead>
                             <tr>
-                                <th>File</th>
+                                <th>File Path</th>
                                 <th>Page URL</th>
                                 <th>Last Modified (UTC)</th>
                             </tr>
@@ -467,7 +538,7 @@ final class StillWorks_HTML_Sitemap_Sync {
 
             <p>
                 <strong>Integration status:</strong>
-                Rank Math provider registered. Automatic change detection enabled.
+                Rank Math provider registered. Multi-folder automatic change detection enabled.
             </p>
         </div>
         <?php
@@ -569,5 +640,3 @@ final class StillWorks_HTML_Sitemap_Provider {
 }
 
 StillWorks_HTML_Sitemap_Sync::init();
-
-

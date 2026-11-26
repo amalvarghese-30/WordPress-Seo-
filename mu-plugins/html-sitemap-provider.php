@@ -31,6 +31,7 @@ final class StillWorks_HTML_Sitemap_Sync {
         'index.html',
         '404.html',
         'thank-you.html',
+        'readme.html',
     ];
 
     private const SIGNATURE_OPTION = 'stillworks_html_sitemap_signature';
